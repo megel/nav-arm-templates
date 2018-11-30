@@ -13,9 +13,14 @@ param
     [Parameter(Mandatory=$true)]
     [string] $pool,
     [Parameter(Mandatory=$true)]
-    [string] $vmname
+    [string] $vmname,
+    [string] $agentVersion              = "2.142.1",
+    [string] $finalSetupScriptUrl       = ""
 )
 
+function Log([string]$line) {
+    ([DateTime]::Now.ToString([System.Globalization.DateTimeFormatInfo]::CurrentInfo.ShortTimePattern.replace(":mm",":mm:ss")) + " $line") | Add-Content -Path "c:\agent\status.txt"
+}
 function Download-File([string]$sourceUrl, [string]$destinationFile)
 {
     Log "Downloading $destinationFile"
@@ -42,9 +47,9 @@ Install-Package -Name docker -ProviderName DockerMsftProvider -Force
 
 $DownloadFolder = "C:\Download"
 MkDir $DownloadFolder -ErrorAction Ignore | Out-Null
-$agentFilename = "vsts-agent-win-x64-2.141.1.zip"
+$agentFilename = "vsts-agent-win-x64-$agentVersion.zip"
 $agentFullname = Join-Path $DownloadFolder $agentFilename
-$agentUrl = "https://vstsagentpackage.azureedge.net/agent/2.141.1/$agentFilename"
+$agentUrl = "https://vstsagentpackage.azureedge.net/agent/$agentVersion/$agentFilename"
 Download-File -sourceUrl $agentUrl -destinationFile $agentFullname
 $agentFolder = "C:\Agent"
 mkdir $agentFolder -ErrorAction Ignore | Out-Null
@@ -53,6 +58,16 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::ExtractToDirectory($agentFullname, $agentFolder)
 
 .\config.cmd --unattended --url "$devopsorganization" --auth PAT --token "$personalaccesstoken" --pool "$pool" --agent "$vmname" --runAsService --windowsLogonAccount $vmAdminUsername --windowsLogonPassword $adminPassword
+
+if ($finalSetupScriptUrl) {
+    $finalSetupScript = "$DownloadFolder\FinalSetupScript.ps1"
+    Download-File -sourceUrl $finalSetupScriptUrl -destinationFile $finalSetupScript
+}
+
+if (Test-Path $finalSetupScript) {
+    Log "Running FinalSetupScript"
+    . $finalSetupScript
+}
 
 Restart-Computer -force
 
